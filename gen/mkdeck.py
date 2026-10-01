@@ -35,16 +35,26 @@ def rows(ids, per=16):
     return '\n'.join(', '.join(str(i) for i in ids[j:j + per]) for j in range(0, len(ids), per))
 
 
-def tail(kn, gmin, ux):
+def tail(kn, gmin, ux, uf=None, gc=None):
+    """uf: {'ZR': u_f, 'ZRH': u_f} replaces the damage-evolution displacement (2nd
+    constant of the first data line under *Damage Initiation of that material);
+    gc: (Gc_seed, Gc_regular) replaces the 4th constant of the two *User Section lines."""
     src = open(SRC, 'rb').read()
     if hashlib.sha256(src).hexdigest() != SRC_SHA:
         sys.exit('source deck hash mismatch')
     t = src.decode('ascii'); t = t[t.index('*Material, Name=ZR'):]
-    out, L = [], t.split('\n'); nrep = 0; skip = False
+    out, L = [], t.split('\n'); nrep = 0; mat = None; nuf = 0
     for j, l in enumerate(L):
         u = l.strip().upper()
+        if u.startswith('*MATERIAL'):
+            mat = u.split('NAME=')[1].strip()
+        if uf and j > 0 and L[j - 1].strip().upper().startswith('*DAMAGE INITIATION') and mat in uf:
+            f = l.split(','); f[1] = ' %.6g' % uf[mat]; l = ','.join(f); nuf += 1
         if j > 0 and L[j - 1].strip().upper().startswith('*USER SECTION'):
-            f = l.split(','); f[0] = '%.6e' % kn; f[4] = ' %.6e' % gmin; l = ','.join(f); nrep += 1
+            f = l.split(','); f[0] = '%.6e' % kn; f[4] = ' %.6e' % gmin
+            if gc:
+                f[3] = ' %.6g' % gc[0 if 'SEED' in L[j - 1].upper() else 1]
+            l = ','.join(f); nrep += 1
         if u.startswith('FACE_XL_NSET, 1, 1,'):
             l = 'FACE_XL_NSET, 1, 1, %.6f' % ux
         if u.startswith('*OUTPUT'):
@@ -54,6 +64,8 @@ def tail(kn, gmin, ux):
         out.append(l)
     if nrep != 2:
         sys.exit('expected two *User Section cards, found %d' % nrep)
+    if uf and nuf != len(uf):
+        sys.exit('u_f replaced in %d materials, expected %d' % (nuf, len(uf)))
     return '\n'.join(out) + '\n'
 
 
@@ -63,6 +75,9 @@ def main():
     ap.add_argument('--kn', type=float, default=1e8)
     ap.add_argument('--gmin', type=float, default=2e-8)
     ap.add_argument('--strain', type=float, default=0.25, help='nominal strain at theta = 1')
+    ap.add_argument('--uf-zr', type=float, help='matrix damage-evolution displacement u_f, mm')
+    ap.add_argument('--uf-zrh', type=float, help='hydride damage-evolution displacement u_f, mm')
+    ap.add_argument('--gc', type=float, nargs=2, metavar=('SEED', 'REGULAR'), help='interface Gc, N/mm')
     a = ap.parse_args()
     z = np.load(os.path.join(a.geom, 'mesh.npz'))
     st = json.load(open(os.path.join(a.geom, 'stats.json')))
@@ -128,7 +143,10 @@ def main():
           '*Nset, Nset=FACE_X0_NSET', rows(x0 + 1), '*Nset, Nset=FACE_XL_NSET', rows(xl + 1),
           '*Nset, Nset=FIXPOINTA', str(at((0., 0., 0.))), '*Nset, Nset=FIXPOINTB', str(at((0., Ly, 0.)))]
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
-    open(a.out, 'w').write('\n'.join(L) + '\n' + tail(a.kn, a.gmin, a.strain * Lx))
+    uf = {k: v for k, v in (('ZR', a.uf_zr), ('ZRH', a.uf_zrh)) if v is not None}
+    L.insert(4, '** scale: u_f ZR %s, u_f ZRH %s mm; interface Gc seed/regular %s N/mm (None = base deck)'
+             % (a.uf_zr, a.uf_zrh, a.gc))
+    open(a.out, 'w').write('\n'.join(L) + '\n' + tail(a.kn, a.gmin, a.strain * Lx, uf or None, a.gc))
     print('%s: nodes %d (duplicates %d), matrix %d, hydride %d (radial %d), UC6 %d, grip %.5f mm'
           % (a.out, len(Xall), len(shared), nm, nh, int(rad.sum()), nf, a.strain * Lx))
 
