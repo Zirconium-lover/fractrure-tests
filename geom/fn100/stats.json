@@ -1,0 +1,27 @@
+{
+ "seed": 1,
+ "fn_target": 100.0,
+ "fn_actual": 100.0,
+ "vf_actual": 1.155,
+ "box_um": [
+  150.0,
+  150.0,
+  75.0
+ ],
+ "packets": 9,
+ "leaves": 21,
+ "petals": 12,
+ "packets_radial": 9,
+ "thickness_um": {
+  "min": 0.5,
+  "median": 0.81,
+  "max": 2.0
+ },
+ "nodes": 51604,
+ "tets_matrix": 219130,
+ "tets_hydride": 75939,
+ "uc6_facets": 55176,
+ "gamma_min_matrix": 0.1634,
+ "gamma_min_hydride": 0.2063,
+ "tets_gamma_below_0p1": 0
+}
